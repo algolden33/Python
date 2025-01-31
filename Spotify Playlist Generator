@@ -1,0 +1,121 @@
+import requests
+
+# Replace with your actual credentials
+CLIENT_ID = "XXX"
+CLIENT_SECRET = "XXX"
+REFRESH_TOKEN = "XXX"
+
+
+
+# Replace these with your actual values
+ACCESS_TOKEN = "XXX"  # Use the Access Token you got earlier
+PLAYLIST_ID = "XXX"  # Your Playlist ID
+ARTIST_IDS = [  # List of artists to track
+    "7itMGcVGRKS43LcTQvJitf",  # Example: Rossi
+    "3YRKJG9dgxTToWLfQnp3h3",  # Example: Caleb Jackson
+    "79uJoLQkQ621xZy7MyH4uL",  # Example: Ben Sterling
+    "6oIoaURalGEtkYTswOLoft",  # Exmample: Crusy
+    "2ucdZN7GyBGxIKHIzksnXc",  # Exmample: Essel
+    "19KqOfazpv8bU6RrVJpLcV",  # Exmample: Marsolo
+    "4p5WgeiPSPpqPDs7T6OkWf",  # Exmample: ANOTR
+    "6zsJjoCtL1WByG0VsuFWzR"   # Exmample: BLOND:ISH
+
+]
+
+
+
+RELEASE_DATE_FILTER = "2025-01"
+
+# ✅ Function to Refresh the Access Token
+def get_access_token():
+    url = "https://accounts.spotify.com/api/token"
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": REFRESH_TOKEN,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+    }
+    response = requests.post(url, data=data)
+
+    if response.status_code == 200:
+        token_data = response.json()
+        access_token = token_data["access_token"]
+        print(f"✅ Refreshed Access Token: {access_token}")
+        return access_token
+    else:
+        print("❌ Error refreshing access token:", response.json())
+        exit()
+
+# Use the refreshed token
+ACCESS_TOKEN = get_access_token()
+
+# ✅ Step 2: Fetch Current Songs in the Playlist (to Avoid Duplicates)
+def get_existing_tracks():
+    url = f"https://api.spotify.com/v1/playlists/{PLAYLIST_ID}/tracks"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    response = requests.get(url, headers=headers)
+
+    existing_tracks = set()  # Use a set for quick lookup
+    if response.status_code == 200:
+        items = response.json().get("items", [])
+        for item in items:
+            track_uri = item["track"]["uri"]
+            existing_tracks.add(track_uri)  # Store all existing song URIs
+    else:
+        print("❌ Error fetching existing playlist tracks:", response.json())
+
+    return existing_tracks
+
+
+
+
+# Step 1: Get new releases from artists
+def get_artist_releases():
+    track_uris = []
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+
+    for artist_id in ARTIST_IDS:
+        url = f"https://api.spotify.com/v1/artists/{artist_id}/albums?include_groups=single,album&limit=10"
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            albums = response.json()["items"]
+            for album in albums:
+                album_release_date = album["release_date"]
+                
+                if album_release_date.startswith(RELEASE_DATE_FILTER):  # ✅ Strictly filter for January 2025
+                    album_id = album["id"]
+                    tracks_url = f"https://api.spotify.com/v1/albums/{album_id}/tracks"
+                    tracks_response = requests.get(tracks_url, headers=headers)
+                    
+                    if tracks_response.status_code == 200:
+                        for track in tracks_response.json()["items"]:
+                            track_uris.append(track["uri"])  # Collect only valid song URIs
+        else:
+            print(f"❌ Error fetching new releases for artist {artist_id}: {response.json()}")
+
+    return track_uris
+
+# ✅ Step 4: Add Only New Songs to Playlist
+def add_songs_to_playlist(track_uris):
+    existing_tracks = get_existing_tracks()  # Fetch current playlist tracks
+    new_tracks = [track_uri for track_uri in track_uris if track_uri not in existing_tracks]  # ✅ Remove duplicates
+
+    if not new_tracks:
+        print("✅ No new tracks to add—playlist is up to date!")
+        return
+
+    url = f"https://api.spotify.com/v1/playlists/{PLAYLIST_ID}/tracks"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+    data = {"uris": new_tracks}
+
+    response = requests.post(url, headers=headers, json=data)
+
+    if response.status_code == 201:
+        print(f"✅ {len(new_tracks)} new songs from artists (January 2025) added to the playlist!")
+    else:
+        print("❌ Error adding songs:", response.json())
+
+# 🚀 Run the functions
+new_tracks = get_artist_releases()  # Get new releases
+add_songs_to_playlist(new_tracks)  # Add to the playlist
